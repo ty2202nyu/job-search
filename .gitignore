@@ -1,0 +1,7 @@
+.cache/
+results/
+__pycache__/
+resume.txt
+resume_history/
+uploads/
+settings.json

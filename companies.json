@@ -1,0 +1,20 @@
+{
+  "_comment": "Employers whose public job boards are scanned. Add a company by finding its board slug: boards.greenhouse.io/<slug>, jobs.lever.co/<slug>, or jobs.ashbyhq.com/<slug>. Slugs that stop working are skipped with a warning.",
+  "greenhouse": [
+    "a16z", "affirm", "alloy", "anthropic", "asana", "attentive", "axios", "betterment", "block", "braze",
+    "brex", "bridgewater89", "carta", "chime", "cockroachlabs", "coinbase", "datadog", "dealpath", "discord",
+    "duolingo", "figma", "fireblocks", "gemini", "generalatlantic", "glossier", "gusto", "highwire", "iconiq",
+    "janestreet", "justworks", "lyft", "mercury", "mongodb", "newrelic", "novacredit", "octus", "oscar",
+    "payoneer", "peloton", "pinterest", "point72", "public", "reddit", "ripple", "robinhood", "seatgeek",
+    "sigmacomputing", "sixfold", "sofi", "squarespace", "stripe", "taboola", "talkspace", "thenewyorktimes",
+    "thetradedesk", "vestwell", "via", "voxmedia", "vts", "wehrtyou", "yext", "zocdoc"
+  ],
+  "lever": [
+    "anchorage", "cherre", "olo", "palantir", "ro", "slate", "spotify", "wealthfront"
+  ],
+  "ashby": [
+    "cohere", "cursor", "decagon", "elevenlabs", "harvey", "headway", "hex", "hopper", "kargo", "modal",
+    "moderntreasury", "nerdwallet", "notion", "openai", "paxos", "perplexity", "persona", "ramp", "replit",
+    "sierra", "titan", "uipath", "watershed"
+  ]
+}
