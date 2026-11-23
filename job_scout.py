@@ -511,6 +511,8 @@ def required_years(desc: str) -> int | None:
 def job_level(title: str, desc: str, req: int | None) -> str:
     if SENIOR_RE.search(title) or (req or 0) >= 5:
         return "senior"
+    if re.search(r"\b(experienced (?:professionals?|hires?)|lateral)\b", title, re.I):
+        return "mid"
     if req is not None and req >= 2:          # a stated requirement beats an entry-sounding title
         return "early" if req == 2 else "mid"
     if JUNIOR_RE.search(title) or ENTRY_TEXT_RE.search(desc) or req is not None:
