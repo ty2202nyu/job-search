@@ -739,7 +739,7 @@ def run_search(resume: str, opts: dict, log=print):
 PUBLIC_FIELDS = ("final_score", "fit", "score", "ai_score", "ai_verdict", "ai_strengths", "ai_gaps", "ai_summary",
                  "outlook", "company_health", "industry_outlook", "job_security", "company_info", "title",
                  "company", "location", "salary", "posted", "url", "matched", "missing", "notes", "source",
-                 "categories")
+                 "categories", "new", "first_seen")
 
 
 def public(jobs):
@@ -748,7 +748,7 @@ def public(jobs):
 
 def write_csv(jobs, path):
     cols = ["final_score", "fit", "outlook", "company_health", "industry_outlook", "job_security", "ai_verdict",
-            "title", "company", "location", "salary", "posted", "url", "categories", "matched", "missing", "notes",
+            "new", "first_seen", "title", "company", "location", "salary", "posted", "url", "categories", "matched", "missing", "notes",
             "company_notes", "ai_summary", "source"]
     with open(path, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")

@@ -24,6 +24,20 @@ A page opens at http://127.0.0.1:8765 (only reachable from this computer). On it
   Risk & Compliance, Consulting), add specific titles, exclude titles, and set how much company outlook counts.
 - Filter and sort results, open each company's details (Sayari record, news sources), and download a CSV.
 
+## Daily updates and the weekly email
+
+- **Daily update** (on by default at 8:00 AM): every morning the search re-runs by itself with your saved resume
+  and the settings from your last search. Postings that weren't there before get a **NEW** tag for 24 hours
+  (use *New only* above the results), and a Mac notification tells you when new ones score 70+.
+  If the Mac is asleep at that time, it runs when it wakes. If it's shut down, that day is skipped.
+- **Weekly email**: in the *Weekly email* card, enter the address, pick Saturday or Sunday and a time, and choose
+  how to send it: through the Mac Mail app (uses the account set up there) or Gmail with an
+  [app password](https://myaccount.google.com/apppasswords), which is stored in your Mac's Keychain, not in this folder.
+  The email lists postings first seen that week, best first. Use *Send a test email now* to check it.
+
+Both schedules are macOS LaunchAgents in `~/Library/LaunchAgents/com.nycjobscout.*.plist`. Turn them off from the
+page. Their output goes to `results/daily.log`. The Mac needs to be on, but the web page doesn't need to be open.
+
 A search takes about 15 seconds. Re-scanning all employer job boards adds about a minute (results are reused for 6 hours).
 
 ## Where jobs come from
@@ -64,4 +78,4 @@ python3 job_scout.py resume.txt --categories finance,insurance,risk --exclude "i
 python3 job_scout.py --help
 ```
 
-Your resume, settings, uploads and results stay in this folder and are listed in `.gitignore`.
+Your resume, settings, email settings, uploads and results stay in this folder and are listed in `.gitignore`.
