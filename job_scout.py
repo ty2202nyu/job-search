@@ -127,11 +127,27 @@ ability strong skills skill etc using use used help helping make making build bu
 
 SENIOR_RE = re.compile(r"\b(senior|sr\.?|staff|principal|lead|head of|director|vp|vice president|"
                        r"chief|manager|distinguished|partner|svp|evp)\b", re.I)
-JUNIOR_RE = re.compile(r"\b(junior|jr\.?|entry[- ]level|new grad|graduate|early career|"
-                       r"associate|apprentice|fellow(?:ship)?|analyst i\b|analyst 1\b|coordinator|assistant|"
-                       r"analyst program|rotational)\b", re.I)
-YEARS_REQ_RE = re.compile(r"(\d{1,2})\s*\+?\s*(?:-|–|to)?\s*(?:\d{1,2})?\s*\+?\s*years?(?:\s+of)?"
-                          r"(?:\s+\w+){0,4}\s+experience", re.I)
+JUNIOR_RE = re.compile(r"\b(junior|jr\.?|entry[- ]level|new grad(?:uate)?|university grad(?:uate)?|recent grad(?:uate)?|"
+                       r"early career|campus|class of 20\d\d|apprentice|analyst i\b|analyst 1\b|associate i\b|"
+                       r"analyst program|rotational|graduate program|coordinator|assistant)\b", re.I)
+# Phrases in a posting's text that mark it as open to people without full-time experience
+ENTRY_TEXT_RE = re.compile(r"\b(entry[- ]level|new grad(?:uate)?s?|recent (?:college )?grad(?:uate)?s?|early[- ]career|"
+                           r"class of 20(?:2[5-8])|graduating (?:in|by) 20\d\d|university grad(?:uate)?s?|"
+                           r"0\s*(?:-|–|to)\s*[12]\s*years?|no (?:prior )?experience (?:is )?required|"
+                           r"(?:up to|less than) (?:1|2|one|two) years?)\b", re.I)
+# Roles that need a license or degree a resume either shows or doesn't
+CREDENTIAL_ROLES = [
+    (re.compile(r"\b(counsel|attorney|lawyer|associate general counsel)\b", re.I), re.compile(r"\b(j\.?d\.?|juris doctor|law school|bar admission)\b", re.I)),
+    (re.compile(r"\b(dean|professor|lecturer|teacher|instructor)\b", re.I), re.compile(r"\b(ph\.?d|teaching|professor|teacher)\b", re.I)),
+    (re.compile(r"\b(nurse|physician|pharmacist|clinician|therapist|dentist|md\b)", re.I), re.compile(r"\b(nursing|rn\b|m\.?d\.?|pharm|clinical)\b", re.I)),
+    (re.compile(r"\b(actuary|actuarial)\b", re.I), re.compile(r"\b(actuar|soa exam|fsa|asa)\b", re.I)),
+]
+INTERN_ROLE_RE = re.compile(r"\b(intern|internship|co-?op|practicum|student|apprentice|summer (?:analyst|associate)|"
+                            r"trainee|research assistant|teaching assistant|graduate assistant)\b", re.I)
+NUM_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
+             "ten": 10, "twelve": 12, "fifteen": 15}
+YEARS_REQ_RE = re.compile(r"(\d{1,2})\s*\+?\s*(?:-|–|to)?\s*(?:\d{1,2})?\s*\+?\s*(?:years?|yrs?)['’]?(?:\s+of)?"
+                          r"(?:\s+[\w/&,-]+){0,5}\s+experience", re.I)
 
 
 # --------------------------------------------------------------------------
@@ -175,7 +191,16 @@ OTHER_HEAD_RE = re.compile(r"education|extracurricular|activities|athletics|lead
 
 
 def estimate_years(text: str) -> float:
-    """Years of work experience from date ranges in the Experience section(s), counted by month."""
+    """Full-time-equivalent years of work experience (internships count a quarter)."""
+    return experience_profile(text)["years"]
+
+
+def career_level(years: float) -> str:
+    return "entry" if years < 1.5 else "early" if years < 3 else "mid" if years < 6 else "senior"
+
+
+def experience_profile(text: str) -> dict:
+    """Months of full-time and internship work from date ranges in the Experience section(s)."""
     lines = text.splitlines()
     work, section, saw_heading = [], None, False
     for ln in lines:
@@ -190,17 +215,28 @@ def estimate_years(text: str) -> float:
         if section == "work" or not saw_heading:
             work.append(ln)
     today = dt.date.today()
-    covered = set()
-    for m in DATE_RANGE_RE.finditer("\n".join(work)):
+    body = "\n".join(work)
+    matches = list(DATE_RANGE_RE.finditer(body))
+    full, intern = set(), set()
+    for i, m in enumerate(matches):
         sm, sy, em, ey = m.groups()
         start = int(sy) * 12 + (MONTHS[sm[:3].lower()] if sm else 1)
         if ey[0].isdigit():
             end = int(ey) * 12 + (MONTHS[em[:3].lower()] if em else 12)
         else:
             end = today.year * 12 + today.month
-        if 0 <= end - start <= 480:
-            covered.update(range(start, end + 1))
-    return round(len(covered) / 12, 1)
+        if not 0 <= end - start <= 480:
+            continue
+        # The role's block: from the line before this date to the next date range.
+        line_start = body.rfind("\n", 0, body.rfind("\n", 0, m.start()) if m.start() else 0) + 1
+        block = body[line_start:matches[i + 1].start() if i + 1 < len(matches) else len(body)]
+        head = "\n".join(block.splitlines()[:4])
+        is_intern = INTERN_ROLE_RE.search(head) or re.search(r"\bpracticum\b", block, re.I)
+        (intern if is_intern else full).update(range(start, end + 1))
+    intern -= full
+    years = round((len(full) + 0.25 * len(intern)) / 12, 1)
+    return {"years": years, "full_time_months": len(full), "internship_months": len(intern),
+            "level": career_level(years)}
 
 
 # --------------------------------------------------------------------------
@@ -464,8 +500,22 @@ def find_skills(text: str, strict: bool = False) -> set[str]:
 
 
 def required_years(desc: str) -> int | None:
-    vals = [int(m.group(1)) for m in YEARS_REQ_RE.finditer(desc) if 0 < int(m.group(1)) <= 20]
-    return min(vals) if vals else None
+    """The experience a posting asks for: the largest 'N+ years ... experience' it states (0 for '0-2 years')."""
+    desc = re.sub(r"\b(" + "|".join(NUM_WORDS) + r")\b(?=\s*(?:\(\d+\)\s*)?\+?\s*(?:years?|yrs?))",
+                  lambda m: str(NUM_WORDS[m.group(1).lower()]), desc, flags=re.I)
+    desc = re.sub(r"\b(\w+)\s*\((\d{1,2})\)", r"\2", desc)   # "three (3) years" -> "3 years"
+    vals = [int(m.group(1)) for m in YEARS_REQ_RE.finditer(desc) if int(m.group(1)) <= 15]
+    return max(vals) if vals else None
+
+
+def job_level(title: str, desc: str, req: int | None) -> str:
+    if SENIOR_RE.search(title) or (req or 0) >= 5:
+        return "senior"
+    if req is not None and req >= 2:          # a stated requirement beats an entry-sounding title
+        return "early" if req == 2 else "mid"
+    if JUNIOR_RE.search(title) or ENTRY_TEXT_RE.search(desc) or req is not None:
+        return "entry"
+    return "unstated"
 
 
 TECH_TITLE_RE = re.compile(r"\b(engineer|engineering|developer|scientist|swe|sre|devops|architect|programmer)\b", re.I)
@@ -529,14 +579,23 @@ def score_jobs(jobs, resume, opts):
 
         notes = []
         req = required_years(j["description"])
-        if req is not None and req > years + 1:
-            score -= min(8 * (req - years - 1), 30)
-            notes.append(f"asks for {req}+ yrs")
+        level = job_level(j["title"], j["description"], req)
+        if req is not None and req > years + 0.5:
+            gap = req - years
+            score -= min(12 * gap, 40)
+            notes.append(f"asks for {req}+ yrs (you have ~{years:g})")
         if SENIOR_RE.search(j["title"]) and years < 5:
-            score -= 15
+            score -= 30 if years < 3 else 15
             notes.append("senior-level title")
-        if JUNIOR_RE.search(j["title"]) and years < 4:
-            score += 6
+        if level == "entry":
+            score += 10 if years < 1.5 else 5 if years < 3 else -5
+        elif level == "unstated" and years < 1.5:
+            score -= 4   # no stated requirement: often fine, but less certain than an explicit entry-level role
+        for role_re, cred_re in CREDENTIAL_ROLES:
+            if role_re.search(j["title"]) and not cred_re.search(resume):
+                score -= 35
+                notes.append("needs a credential your resume doesn't show")
+                break
         if TECH_TITLE_RE.search(j["title"]) and not (resume_skills & CODING_SKILLS):
             score -= 25
             notes.append("engineering role; resume shows no programming")
@@ -544,7 +603,7 @@ def score_jobs(jobs, resume, opts):
             notes.append("short description, so the score is rougher")
 
         j.update(score=int(max(0, min(100, round(score)))), matched=matched, missing=missing[:12],
-                 req_years=req, notes="; ".join(notes), categories=cats)
+                 req_years=req, level=level, notes="; ".join(notes), categories=cats)
     return years, resume_skills
 
 
@@ -739,7 +798,7 @@ def run_search(resume: str, opts: dict, log=print):
 PUBLIC_FIELDS = ("final_score", "fit", "score", "ai_score", "ai_verdict", "ai_strengths", "ai_gaps", "ai_summary",
                  "outlook", "company_health", "industry_outlook", "job_security", "company_info", "title",
                  "company", "location", "salary", "posted", "url", "matched", "missing", "notes", "source",
-                 "categories", "new", "first_seen")
+                 "categories", "new", "first_seen", "level", "req_years")
 
 
 def public(jobs):

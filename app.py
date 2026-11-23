@@ -269,6 +269,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {
                 "resume": resume, "settings": load_settings(), "latest": latest,
                 "estimated_years": js.estimate_years(resume) if resume else None,
+                "profile": js.experience_profile(resume) if resume else None,
                 "categories": {k: v[0] for k, v in js.CATEGORIES.items()},
                 "ai_ok": ok, "ai_why": why, "schedule": schedule_state(), "email": email_state(),
                 "history": sorted((p.name for p in HISTORY.glob("*.txt")), reverse=True)[:20] if HISTORY.exists() else []})
@@ -296,7 +297,7 @@ class Handler(BaseHTTPRequestHandler):
             if len(text.strip()) < 200:
                 return self._send(400, {"error": "That looks too short to be a full resume."})
             save_resume(text)
-            return self._send(200, {"ok": True, "estimated_years": js.estimate_years(text)})
+            return self._send(200, {"ok": True, "estimated_years": js.estimate_years(text), "profile": js.experience_profile(text)})
 
         if self.path == "/api/upload":
             name = Path(self.headers.get("X-Filename") or "resume.txt").name
@@ -312,7 +313,7 @@ class Handler(BaseHTTPRequestHandler):
             if len(text) < 200:
                 return self._send(400, {"error": "Couldn't pull much text out of that file. Try a PDF or paste the text."})
             save_resume(text)
-            return self._send(200, {"ok": True, "text": text, "estimated_years": js.estimate_years(text)})
+            return self._send(200, {"ok": True, "text": text, "estimated_years": js.estimate_years(text), "profile": js.experience_profile(text)})
 
         if self.path == "/api/run":
             settings = {**DEFAULT_SETTINGS, **json.loads(self._body() or b"{}")}
@@ -387,7 +388,7 @@ button.primary{background:var(--accent);color:var(--accent-ink);border-color:var
 .t{font-size:16px;font-weight:600;color:var(--accent);text-decoration:none}.t:hover{text-decoration:underline}
 .m{color:var(--muted);font-size:13px;margin:2px 0 6px}.chips{display:flex;flex-wrap:wrap;gap:5px;margin:4px 0}
 .chip{font-size:12px;padding:2px 8px;border-radius:999px;background:var(--chip)}.chip.miss{background:transparent;border:1px dashed var(--line);color:var(--muted)}
-.chip.cat{background:transparent;border:1px solid var(--line)}.new{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;background:var(--hi);color:var(--card);margin-left:6px;vertical-align:2px}.note{font-size:12px;color:var(--mid)}
+.chip.cat{background:transparent;border:1px solid var(--line)}.lvl-entry{background:var(--hi);color:var(--card)}.lvl-senior,.lvl-mid{background:transparent;border:1px solid var(--lo);color:var(--lo)}.new{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;background:var(--hi);color:var(--card);margin-left:6px;vertical-align:2px}.note{font-size:12px;color:var(--mid)}
 .sub{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:6px}.sub b{color:var(--ink)}
 details.co{font-size:13px;margin-top:6px}details.co summary{cursor:pointer;color:var(--muted)}details.co a{color:var(--accent)}
 .ai{font-size:13px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
@@ -460,6 +461,7 @@ details.co{font-size:13px;margin-top:6px}details.co summary{cursor:pointer;color
  <div class="bar">
   <input type="search" id="q" placeholder="Filter by title, company, skill…">
   <select id="catf"><option value="">All categories</option></select>
+  <select id="levelf"><option value="">All levels</option><option value="fit" selected>Right for my level</option><option value="entry">Entry level only</option></select>
   <select id="min"><option value="0">Any score</option><option value="50">50+</option><option value="60" selected>60+</option><option value="70">70+</option><option value="80">80+</option></select>
   <label class="inline" style="margin:0"><input type="checkbox" id="newonly"> New only</label>
   <select id="sort"><option value="final_score">Best overall</option><option value="fit">Best fit</option><option value="outlook">Best company outlook</option><option value="company">Company A–Z</option></select>
@@ -475,10 +477,11 @@ const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&
 const col=s=>s>=75?"var(--hi)":s>=55?"var(--mid)":"var(--lo)";
 let JOBS=[],CATS={},META=null;
 async function api(path,opts={}){const r=await fetch(path,opts);const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||r.statusText);return d}
-function setYears(y){$("yrs").textContent=y!=null?`~${y} yrs of experience detected`:""}
+const LEVELS={entry:"Entry level",early:"Asks ~2 yrs",mid:"Asks 3-4 yrs",senior:"Senior",unstated:"Level not stated"};
+function setYears(y,p){$("yrs").textContent=p?`${LEVELS[p.level]||p.level} · ~${p.years} yrs (${p.full_time_months} mo full-time, ${p.internship_months} mo internships at ¼)`:y!=null?`~${y} yrs of experience`:""}
 async function init(){
  const s=await api("/api/state");CATS=s.categories;
- $("resume").value=s.resume;setYears(s.estimated_years);
+ $("resume").value=s.resume;setYears(s.estimated_years,s.profile);
  $("cats").innerHTML=Object.entries(CATS).map(([k,v])=>`<label><input type="checkbox" value="${k}"> ${esc(v)}</label>`).join("");
  $("catf").innerHTML+=Object.entries(CATS).map(([k,v])=>`<option value="${k}">${esc(v)}</option>`).join("");
  const st=s.settings;
@@ -515,9 +518,9 @@ function settings(){return{categories:[...document.querySelectorAll("#cats input
  include_remote:$("include_remote").checked,web:$("web").checked,refresh:$("refresh").checked,ai:$("ai").checked,
  company_weight:parseFloat($("cw").value)}}
 $("save").onclick=async()=>{try{const d=await api("/api/resume",{method:"POST",body:JSON.stringify({text:$("resume").value})});
- setYears(d.estimated_years);$("rstatus").textContent="Saved. The previous version is kept under Earlier versions.";init()}catch(e){$("rstatus").textContent=e.message}};
+ setYears(d.estimated_years,d.profile);$("rstatus").textContent="Saved. The previous version is kept under Earlier versions.";init()}catch(e){$("rstatus").textContent=e.message}};
 $("file").onchange=async e=>{const f=e.target.files[0];if(!f)return;$("rstatus").textContent="Reading "+f.name+"…";
- try{const d=await api("/api/upload",{method:"POST",headers:{"X-Filename":f.name},body:f});$("resume").value=d.text;setYears(d.estimated_years);
+ try{const d=await api("/api/upload",{method:"POST",headers:{"X-Filename":f.name},body:f});$("resume").value=d.text;setYears(d.estimated_years,d.profile);
  $("rstatus").textContent="Loaded "+f.name+". Check the text, edit if needed, then run the search.";init()}catch(err){$("rstatus").textContent=err.message}e.target.value=""};
 $("hist").onchange=async e=>{if(!e.target.value)return;const d=await api("/api/history/"+encodeURIComponent(e.target.value));
  $("resume").value=d.text;$("rstatus").textContent="Loaded "+e.target.value+". Click Save changes to make it current.";e.target.value=""};
@@ -526,16 +529,17 @@ $("run").onclick=async()=>{$("run").disabled=true;$("status").textContent="Searc
  const d=await api("/api/run",{method:"POST",body:JSON.stringify(settings())});show(d);$("status").textContent=d.log.join("\n")}
  catch(e){$("status").textContent=e.message}finally{$("run").disabled=false;$("refresh").checked=false}};
 function show(d){JOBS=d.jobs;META=d.meta;
- $("meta").textContent=`${META.total} NYC postings scored ${d.ran_at?("on "+d.ran_at.replace("T"," at ")):""}${d.auto?" (daily update)":""}${META.new!=null?` · ${META.new} new in the last 24 hours`:""} · ~${META.years} yrs experience · company outlook counts ${Math.round((META.company_weight??0.25)*100)}%${META.ai?" · top matches re-scored by Claude":""}`;render()}
+ $("meta").textContent=`${META.total} NYC postings scored ${d.ran_at?("on "+d.ran_at.replace("T"," at ")):""}${d.auto?" (daily update)":""}${META.new!=null?` · ${META.new} new in the last 24 hours`:""} · ~${META.years} yrs experience (internships count ¼) · company outlook counts ${Math.round((META.company_weight??0.25)*100)}%${META.ai?" · top matches re-scored by Claude":""}`;render()}
+function fitLevels(){const y=META?.years??0;return y<1.5?["entry","unstated"]:y<3?["entry","early","unstated"]:y<6?["early","mid","unstated"]:["mid","senior","unstated"]}
 function render(){
- const q=$("q").value.toLowerCase(),min=+$("min").value,nw=$("newonly").checked,by=$("sort").value,cf=$("catf").value;
- let rows=JOBS.filter(j=>j.final_score>=min&&(!nw||j.new)&&(!cf||(j.categories||[]).includes(cf))&&(!q||[j.title,j.company,j.location,...(j.matched||[])].join(" ").toLowerCase().includes(q)));
+ const q=$("q").value.toLowerCase(),min=+$("min").value,nw=$("newonly").checked,lv=$("levelf").value,ok=fitLevels(),by=$("sort").value,cf=$("catf").value;
+ let rows=JOBS.filter(j=>j.final_score>=min&&(!nw||j.new)&&(!lv||!j.level||(lv==="entry"?j.level==="entry":ok.includes(j.level)))&&(!cf||(j.categories||[]).includes(cf))&&(!q||[j.title,j.company,j.location,...(j.matched||[])].join(" ").toLowerCase().includes(q)));
  rows.sort((a,b)=>by==="company"?a.company.localeCompare(b.company):(b[by]??0)-(a[by]??0));
  $("list").innerHTML=rows.slice(0,300).map(j=>{const c=j.company_info||{};const sy=c.sayari;return `<div class="job">
  <div><div class="score" style="color:${col(j.final_score)}">${j.final_score}<small>overall</small></div><div class="meter"><i style="width:${j.final_score}%;background:${col(j.final_score)}"></i></div></div>
  <div><a class="t" href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.title)}</a>${j.new?'<span class="new">NEW</span>':""}
  <div class="m">${esc(j.company)} · ${esc(j.location)}${j.salary?" · "+esc(j.salary):""}${j.posted?" · posted "+esc(j.posted):""}${j.first_seen?" · first seen "+esc(j.first_seen):""} · via ${esc(j.source)}</div>
- <div class="chips">${(j.categories||[]).map(k=>`<span class="chip cat">${esc(CATS[k]||k)}</span>`).join("")}${(j.matched||[]).map(s=>`<span class="chip">${esc(s)}</span>`).join("")}</div>
+ <div class="chips">${j.level?`<span class="chip lvl lvl-${j.level}">${LEVELS[j.level]}</span>`:""}${(j.categories||[]).map(k=>`<span class="chip cat">${esc(CATS[k]||k)}</span>`).join("")}${(j.matched||[]).map(s=>`<span class="chip">${esc(s)}</span>`).join("")}</div>
  ${(j.missing||[]).length?`<div class="chips">${j.missing.map(s=>`<span class="chip miss">${esc(s)}</span>`).join("")}</div>`:""}
  ${j.notes?`<div class="note">${esc(j.notes)}</div>`:""}
  <div class="sub"><span>Job fit <b>${j.fit}</b></span><span>Company outlook <b>${j.outlook}</b></span><span>Health ${j.company_health}</span><span>Industry ${j.industry_outlook}</span><span>Job security ${j.job_security}</span></div>
@@ -547,7 +551,7 @@ function render(){
  </details>
  ${j.ai_summary?`<div class="ai"><b>${esc(j.ai_verdict)}</b>: ${esc(j.ai_summary)}${j.ai_gaps?.length?`<br><span class="small">Gaps: ${j.ai_gaps.map(esc).join("; ")}</span>`:""}</div>`:""}
  </div></div>`}).join("")||'<div class="empty">No matches with these filters.</div>'}
-["q","min","sort","catf","newonly"].forEach(id=>$(id).addEventListener("input",render));
+["q","min","sort","catf","newonly","levelf"].forEach(id=>$(id).addEventListener("input",render));
 init();
 </script></body></html>"""
 
