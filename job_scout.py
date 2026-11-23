@@ -420,11 +420,23 @@ def gather_jobs(opts, log=print) -> list[dict]:
             except Exception as e:  # one broken board shouldn't stop the scan
                 return slug, [], e
 
+        failed = []
         with cf.ThreadPoolExecutor(16) as ex:
-            for slug, got, err in ex.map(run, tasks):
+            for (fn, slug), (_, got, err) in zip(tasks, ex.map(run, tasks)):
                 if err:
-                    log(f"  ! skipped {slug}: {err}")
+                    failed.append((fn, slug))
                 jobs.extend(got)
+        # Retry failures slowly (common right after the Mac wakes, before the network settles).
+        for attempt in (1, 2):
+            if not failed:
+                break
+            time.sleep(10 * attempt)
+            retry, failed = failed, []
+            with cf.ThreadPoolExecutor(4) as ex:
+                for t, (slug, got, err) in zip(retry, ex.map(run, retry)):
+                    (failed.append(t) if err else jobs.extend(got))
+        for _, slug in failed:
+            log(f"  ! skipped {slug} (no response after 3 tries)")
         cache_file.write_text(json.dumps(jobs))
         sig_file.write_text(cfg_sig)
         log(f"  fetched {len(jobs)} postings")

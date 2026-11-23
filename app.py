@@ -76,7 +76,9 @@ def mark_new(rows, now):
         first_run = False
     except (OSError, ValueError):
         seen, first_run = {}, True   # first run ever: record everything, call nothing new
-    stamp, cutoff = now.isoformat(timespec="seconds"), now - dt.timedelta(hours=NEW_HOURS)
+    cutoff = now - dt.timedelta(hours=NEW_HOURS)
+    # On the first run, record everything as already old so the next run doesn't flag it all as new.
+    stamp = (now - dt.timedelta(days=30) if first_run else now).isoformat(timespec="seconds")
     current = set()
     for j in rows:
         key = j.get("url") or f"{j.get('company')}|{j.get('title')}"
